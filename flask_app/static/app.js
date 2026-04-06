@@ -652,7 +652,8 @@ createApp({
         };
         const res = await fetchJSON("/api/plan/items", { method: "POST", body: JSON.stringify(payload) });
         if (!res.ok) {
-          this.planMsg = "保存失败";
+          const data = await res.json();
+          this.planMsg = data.message || "保存失败";
           return;
         }
         
@@ -689,13 +690,19 @@ createApp({
             remind_at: null
           };
           try {
-            await fetchJSON("/api/tasks", {
+            const taskRes = await fetchJSON("/api/tasks", {
               method: "POST",
               body: JSON.stringify(taskPayload)
             });
-            await this.fetchTasks();
+            if (!taskRes.ok) {
+              const taskData = await taskRes.json();
+              this.planMsg = `计划保存成功，但创建四象限任务失败: ${taskData.message || '未知错误'}`;
+            } else {
+              await this.fetchTasks();
+            }
           } catch (error) {
             console.error("创建四象限任务失败:", error);
+            this.planMsg = "计划保存成功，但创建四象限任务失败: 网络错误";
           }
         } else if (this.planForm.priority_rule === "两分钟法则") {
           // 创建番茄钟
@@ -733,15 +740,20 @@ createApp({
           quadrant: "Q2",
           scene: "",
           planned_at: "",
+          start_time: "",
+          end_time: "",
           time_block: "",
           notes: "",
           status: "planning",
+          recurrence_type: null,
+          recurrence_interval: 1,
+          recurrence_end_date: "",
         };
         await this.fetchPlanItems();
         await this.loadCalendar();
       } catch (error) {
         console.error("保存计划项失败:", error);
-        this.planMsg = "保存失败";
+        this.planMsg = `保存失败: ${error.message || '未知错误'}`;
       }
     },
     editPlanItem(item) {
