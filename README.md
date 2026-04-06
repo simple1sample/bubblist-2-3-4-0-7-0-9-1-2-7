@@ -71,4 +71,4 @@ set OLLAMA_MODEL=qwen2.5:3b
 已创建项目级 skill：
 - `.cursor/skills/natural-product-scheduler/SKILL.md`
 
-用于后续按你的要求继续生成“无 AI 味、产品化强”的迭代改造。
+用于后续按你的要求继续生成"无 AI 味、产品化强"的迭代改造。
