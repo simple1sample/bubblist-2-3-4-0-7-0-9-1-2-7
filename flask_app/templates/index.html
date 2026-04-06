@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鱼鱼日程</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div id="app" class="app-wrap" :data-theme="theme">
+{% raw %}
+      <div class="bg-grid" aria-hidden="true"></div>
+
+      <template v-if="!user">
+        <section class="card auth-card toon">
+          <h2 class="section-title">账号入口</h2>
+          <div class="tabs toon-tabs">
+            <button type="button" :class="{ active: !isRegister }" @click="isRegister = false">登录</button>
+            <button type="button" :class="{ active: isRegister }" @click="isRegister = true">注册</button>
+          </div>
+          <form v-if="!isRegister" @submit.prevent="doLogin" class="form-grid">
+            <input v-model.trim="auth.username" autocomplete="username" placeholder="用户名" />
+            <input v-model="auth.password" type="password" autocomplete="current-password" placeholder="密码" />
+            <button type="submit" class="btn primary blob">欢迎</button>
+          </form>
+          <form v-else @submit.prevent="doRegister" class="form-grid">
+            <input v-model.trim="auth.username" autocomplete="username" placeholder="用户名（至少 2 字符）" />
+            <input v-model="auth.password" type="password" autocomplete="new-password" placeholder="密码（至少 6 位）" />
+            <button type="submit" class="btn primary blob">新建本子</button>
+          </form>
+          <p v-if="authError" class="error">{{ authError }}</p>
+        </section>
+      </template>
+
+      <template v-else>
+        <header class="top-shell toon" :data-theme="theme">
+          <div class="brand">
+            <div>
+              <div class="brand-name">鱼鱼日程</div>
+              <div class="brand-sub">嗨，{{ user.display_name || user.username }}</div>
+            </div>
+          </div>
+          <nav class="main-nav">
+            <a
+              v-for="item in navItems"
+              :key="item.id"
+              :href="'#/' + item.id"
+              :class="{ on: currentPage === item.id }"
+              @click.prevent="go(item.id)"
+              >{{ item.label }}</a
+            >
+          </nav>
+          <button type="button" class="btn ghost sm" @click="doLogout">退出</button>
+        </header>
+
+        <main class="main-area">
+          <section v-show="currentPage === 'flow'" class="page">
+            <section class="card toon plan-card">
+              <h2 class="section-title">计划流</h2>
+              <p class="muted">
+                按“计划前 → 计划中 → 优先级 → 时间安排”的流程走，先收集想法，再整理和排期。
+              </p>
+              <div class="search-filter" style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                <input v-model="planSearch" placeholder="搜索计划项..." style="flex: 1; min-width: 200px; padding: 8px 12px; border: 2px solid var(--line); border-radius: var(--radius); font-family: var(--font); font-size: 0.9rem; background: var(--card); color: var(--ink);" />
+                <select v-model="planFilterType" style="min-width: 120px; padding: 8px 12px; border: 2px solid var(--line); border-radius: var(--radius); font-family: var(--font); font-size: 0.9rem; background: var(--card); color: var(--ink);">
+                  <option value="all">全部</option>
+                  <option value="priority_rule">按规则</option>
+                  <option value="domain">按领域</option>
+                  <option value="role">按角色</option>
+                  <option value="scene">按场景</option>
+                  <option value="time_block">按时间块</option>
+                </select>
+                <select v-model="planFilterValue" v-if="planFilterType !== 'all'" style="min-width: 120px; padding: 8px 12px; border: 2px solid var(--line); border-radius: var(--radius); font-family: var(--font); font-size: 0.9rem; background: var(--card); color: var(--ink);">
+                  <option value="all">全部</option>
+                  <option v-for="option in filterOptions[planFilterType]" :key="option" :value="option">{{ option }}</option>
+                </select>
+              </div>
+
+              <div class="plan-grid">
+                <div class="plan-col">
+                  <h3>计划前：收集想法</h3>
+                  <form class="form-grid" @submit.prevent="addPlanIdea">
+                    <input v-model.trim="planIdeaForm.title" placeholder="一句话记录想法" />
+                    <textarea v-model="planIdeaForm.notes" rows="2" placeholder="补充说明（可选）"></textarea>
+                    <button type="submit" class="btn primary blob">加入想法库</button>
+                  </form>
+                  <ul class="plan-list">
+                    <li v-if="planIdeas.length === 0" class="empty">暂无想法</li>
+                    <li v-for="idea in planIdeas" :key="idea.id">
+                      <div class="plan-title">{{ idea.title }}</div>
+                      <p v-if="idea.notes" class="plan-notes">{{ idea.notes }}</p>
+                      <small class="muted">{{ localTime(idea.created_at) }}</small>
+                      <button type="button" class="btn sm ghost" @click="deletePlanIdea(idea.id)">移除</button>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="plan-col">
+                  <h3>计划中：分类整理</h3>
+                  <form class="form-grid" @submit.prevent="savePlanItem">
+                    <input v-model.trim="planForm.title" placeholder="计划项标题（必填）" />
+                    <div class="plan-row">
+                      <div class="input-with-suggestions">
+                      <input 
+                        v-model.trim="planForm.domain" 
+                        placeholder="领域（如：学习/健康）" 
+                        @focus="activeInput = 'domain'"
+                        @blur="blurInput()"
+                        @input="updateInputSuggestions('domain')"
+                      />
+                      <div v-if="activeInput === 'domain' && inputHistory.domain.length" class="suggestions">
+                        <div 
+                          v-for="suggestion in inputHistory.domain" 
+                          :key="suggestion"
+                          class="suggestion-item"
+                          @mousedown="planForm.domain = suggestion; activeInput = null"
+                        >
+                          {{ suggestion }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="input-with-suggestions">
+                      <input 
+                        v-model.trim="planForm.project" 
+                        placeholder="项目（如：毕业设计）" 
+                        @focus="activeInput = 'project'"
+                        @blur="blurInput()"
+                        @input="updateInputSuggestions('project')"
+                      />
+                      <div v-if="activeInput === 'project' && inputHistory.project.length" class="suggestions">
+                        <div 
+                          v-for="suggestion in inputHistory.project" 
+                          :key="suggestion"
+                          class="suggestion-item"
+                          @mousedown="planForm.project = suggestion; activeInput = null"
+                        >
+                          {{ suggestion }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="input-with-suggestions">
+                    <input 
+                        v-model.trim="planForm.role" 
+                        placeholder="角色（如：学生/组长）" 
+                        @focus="activeInput = 'role'"
+                        @blur="blurInput()"
+                        @input="updateInputSuggestions('role')"
+                      />
+                    <div v-if="activeInput === 'role' && inputHistory.role.length" class="suggestions">
+                      <div 
+                        v-for="suggestion in inputHistory.role" 
+                        :key="suggestion"
+                        class="suggestion-item"
+                        @mousedown="planForm.role = suggestion; activeInput = null"
+                      >
+                        {{ suggestion }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="plan-row">
+                    <select v-model="planForm.priority_rule">
+                      <option value="四象限">四象限</option>
+                      <option value="两分钟法则">两分钟法则</option>
+                      <option value="135法则">135法则</option>
+                    </select>
+                    <input v-model.trim="planForm.priority_level" placeholder="主次/优先级说明" />
+                    <div v-if="planForm.priority_rule === '四象限'">
+                      <label>象限选择：
+                        <select v-model="planForm.quadrant">
+                          <option value="Q1">Q1 重要紧急</option>
+                          <option value="Q2">Q2 重要不紧急</option>
+                          <option value="Q3">Q3 紧急不重要</option>
+                          <option value="Q4">Q4 不紧急不重要</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="plan-row">
+                    <div class="input-with-suggestions">
+                      <input 
+                        v-model.trim="planForm.scene" 
+                        placeholder="场景（如：图书馆/通勤）" 
+                        @focus="activeInput = 'scene'"
+                        @blur="blurInput()"
+                        @input="updateInputSuggestions('scene')"
+                      />
+                      <div v-if="activeInput === 'scene' && inputHistory.scene.length" class="suggestions">
+                        <div 
+                          v-for="suggestion in inputHistory.scene" 
+                          :key="suggestion"
+                          class="suggestion-item"
+                          @mousedown="planForm.scene = suggestion; activeInput = null"
+                        >
+                          {{ suggestion }}
+                        </div>
+                      </div>
+                    </div>
+                    <input type="datetime-local" v-model="planForm.planned_at" />
+                  </div>
+                  <div class="input-with-suggestions">
+                    <input 
+                        v-model.trim="planForm.time_block" 
+                        placeholder="时间块（如：09:00-10:30）" 
+                        @focus="activeInput = 'time_block'"
+                        @blur="blurInput()"
+                        @input="updateInputSuggestions('time_block')"
+                      />
+                    <div v-if="activeInput === 'time_block' && inputHistory.time_block.length" class="suggestions">
+                      <div 
+                        v-for="suggestion in inputHistory.time_block" 
+                        :key="suggestion"
+                        class="suggestion-item"
+                        @mousedown="planForm.time_block = suggestion; activeInput = null"
+                      >
+                        {{ suggestion }}
+                      </div>
+                    </div>
+                  </div>
+                    <div class="time-blocks">
+                      <button
+                        v-for="b in timeBlockOptions"
+                        :key="b"
+                        type="button"
+                        class="btn sm soft"
+                        @click="pickTimeBlock(b)"
+                      >
+                        {{ b }}
+                      </button>
+                    </div>
+                    <textarea v-model="planForm.notes" rows="2" placeholder="拆分要点/备注"></textarea>
+                    <div class="plan-row">
+                      <select v-model="planForm.status">
+                        <option value="planning">计划中</option>
+                        <option value="scheduled">已排期</option>
+                        <option value="done">已完成</option>
+                      </select>
+                      <button type="submit" class="btn primary blob">
+                        {{ editingPlanId ? "保存" : "加入计划" }}
+                      </button>
+                    </div>
+                  </form>
+                  <p v-if="planMsg" class="message">{{ planMsg }}</p>
+                  <ul class="plan-list">
+                    <li v-if="filteredPlanItems.length === 0" class="empty">暂无计划项</li>
+                    <li v-for="item in filteredPlanItems" :key="item.id">
+                      <div class="plan-title">{{ item.title }}</div>
+                      <div class="plan-meta">
+                        <span>领域：{{ item.domain || "—" }}</span>
+                        <span>项目：{{ item.project || "—" }}</span>
+                        <span>角色：{{ item.role || "—" }}</span>
+                      </div>
+                      <div class="plan-meta">
+                        <span>规则：{{ item.priority_rule || "—" }}</span>
+                        <span>优先级：{{ item.priority_level || "—" }}</span>
+                        <span>象限：{{ item.quadrant || "—" }}</span>
+                        <span>场景：{{ item.scene || "—" }}</span>
+                      </div>
+                      <div class="plan-meta">
+                        <span>时间：{{ item.planned_at ? localTime(item.planned_at) : "待安排" }}</span>
+                        <span>时间块：{{ item.time_block || "—" }}</span>
+                        <span>状态：{{ item.status }}</span>
+                      </div>
+                      <p v-if="item.notes" class="plan-notes">{{ item.notes }}</p>
+                      <div class="btn-row tight">
+                        <button type="button" class="btn sm soft" @click="editPlanItem(item)">编辑</button>
+                        <button type="button" class="btn sm danger-ghost" @click="deletePlanItem(item.id)">删除</button>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section v-show="currentPage === 'tasks'" class="page">
+            <section class="card toon form-card">
+              <h2 class="section-title">{{ editingId ? "改一改任务" : "新建任务" }}</h2>
+              <form @submit.prevent="saveTask" class="form-grid">
+                <input v-model.trim="form.title" placeholder="任务标题（必填）" />
+                <textarea v-model="form.description" rows="3" placeholder="补充说明（可选）"></textarea>
+                <div class="check-row">
+                  <label class="pill"><input type="checkbox" v-model="form.is_important" /> 重要</label>
+                  <label class="pill"><input type="checkbox" v-model="form.is_urgent" /> 紧急</label>
+                </div>
+                <label>截止时间 <input type="datetime-local" v-model="form.due_at" /></label>
+                <label>提醒时间 <input type="datetime-local" v-model="form.remind_at" /></label>
+                <div class="btn-row">
+                  <button type="submit" class="btn primary blob">{{ editingId ? "保存" : "添加" }}</button>
+                  <button v-if="editingId" type="button" class="btn ghost" @click="cancelEdit">取消</button>
+                  <button type="button" class="btn accent" @click="generateSuggestion">整理建议</button>
+                </div>
+              </form>
+              <p v-if="message" class="message">{{ message }}</p>
+              <p v-if="suggestHint" class="hint-pill">{{ suggestHint }}</p>
+              <pre v-if="suggestion" class="suggestion toon-pre">{{ suggestion }}</pre>
+            </section>
+
+            <div class="quadrant-board">
+              <article
+                v-for="q in quadrantOrder"
+                :key="q"
+                :class="['quad', 'quad-' + q.toLowerCase()]"
+              >
+                <div class="quad-head">
+                  <span class="quad-emoji">{{ quadrantEmoji[q] }}</span>
+                  <h3>{{ quadrantTitle[q] }}</h3>
+                </div>
+                <ul class="task-list">
+                  <li v-if="grouped[q].length === 0" class="empty">这里还空空的～</li>
+                  <li v-for="task in grouped[q]" :key="task.id" :class="['task', 'toon-task', task.completed ? 'done' : '']">
+                    <div class="task-title">{{ task.title }}</div>
+                    <p v-if="task.description" class="task-desc">{{ task.description }}</p>
+                    <small class="task-meta">
+                      截止：{{ task.due_at ? localTime(task.due_at) : "—" }} · 提醒：{{ task.remind_at ? localTime(task.remind_at) : "—" }}
+                    </small>
+                    <div class="btn-row tight">
+                      <button type="button" class="btn sm soft" @click="toggleDone(task)">{{ task.completed ? "还原" : "完成" }}</button>
+                      <button type="button" class="btn sm soft" @click="editTask(task)">编辑</button>
+                      <button type="button" class="btn sm danger-ghost" @click="removeTask(task.id)">删掉</button>
+                    </div>
+                  </li>
+                </ul>
+              </article>
+            </div>
+          </section>
+
+          <section v-show="currentPage === 'calendar'" class="page">
+            <div class="card toon">
+              <div class="calendar-head">
+                <h2 class="section-title">🗓️ 日历</h2>
+                <div class="calendar-controls">
+                  <button type="button" class="btn sm ghost" @click="shiftMonth(-1)">上个月</button>
+                  <div class="calendar-label">{{ calendar.year }} 年 {{ calendar.month }} 月</div>
+                  <button type="button" class="btn sm ghost" @click="shiftMonth(1)">下个月</button>
+                </div>
+              </div>
+              <div class="calendar-grid">
+                <div v-for="d in ['一','二','三','四','五','六','日']" :key="d" class="calendar-week">周{{ d }}</div>
+                <div
+                  v-for="cell in calendar.grid"
+                  :key="cell.dateKey + '-' + cell.inMonth"
+                  :class="['calendar-cell', cell.inMonth ? '' : 'dim']"
+                >
+                  <div class="calendar-date">{{ cell.day }}</div>
+                  <ul class="calendar-items">
+                    <li v-for="item in calendar.items[cell.dateKey]" :key="item.key">
+                      <span class="dot" :class="item.type"></span>{{ item.title }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section v-show="currentPage === 'stats'" class="page">
+            <div class="card toon">
+              <h2 class="section-title">统计</h2>
+              <p class="muted">左：任务落在哪个象限多 · 右：本周七天里哪天完成得多</p>
+              <div class="chart-row pies">
+                <div class="chart-box">
+                  <h3>四象限分布</h3>
+                  <canvas id="chartPieQuadrant"></canvas>
+                </div>
+                <div class="chart-box">
+                  <h3>本周完成（按天）</h3>
+                  <canvas id="chartPieWeek"></canvas>
+                </div>
+              </div>
+              <div v-if="statsInsights" class="stats-grid">
+                <div class="stat-card">
+                  <div class="stat-label">任务总数</div>
+                  <div class="stat-value">{{ statsInsights.total }}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">完成数</div>
+                  <div class="stat-value">{{ statsInsights.done }}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">完成率</div>
+                  <div class="stat-value">{{ statsInsights.completion_rate }}%</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">两天内到期</div>
+                  <div class="stat-value">{{ statsInsights.due_soon }}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">本周完成</div>
+                  <div class="stat-value">{{ statsInsights.week_done }}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">平均完成时间(分钟)</div>
+                  <div class="stat-value">{{ statsInsights.avg_completion_time }}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">计划项总数</div>
+                  <div class="stat-value">{{ statsInsights.plan_stats?.total || 0 }}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">番茄钟次数</div>
+                  <div class="stat-value">{{ statsInsights.pomo_stats?.completed || 0 }}</div>
+                </div>
+              </div>
+              <div v-if="statsInsights && statsInsights.suggestions.length" class="advice-box">
+                <h3>规划建议</h3>
+                <ul>
+                  <li v-for="(s, i) in statsInsights.suggestions" :key="i">{{ s }}</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section v-show="currentPage === 'pomodoro'" class="page">
+            <div class="card toon pomodoro-card">
+              <h2 class="section-title">番茄钟</h2>
+              <p class="muted">起个名字、选好分钟，专心一小会儿～</p>
+              <div class="pomo-form">
+                <input v-model.trim="pomo.name" placeholder="专注名称，例如：写周记" />
+                <div class="pomo-presets">
+                  <button v-for="m in pomo.presets" :key="m" type="button" class="btn sm soft" :class="{ active: pomo.chosenPreset === m }" @click="pickPreset(m)">{{ m }} 分</button>
+                </div>
+                <label>自定义分钟 <input type="number" v-model.number="pomo.customMin" min="1" max="120" /></label>
+              </div>
+              <div class="pomo-face">
+                <div class="pomo-time">{{ pomoDisplay }}</div>
+                <div class="btn-row center">
+                  <button type="button" class="btn primary blob" @click="togglePomo" :disabled="pomo.totalSec <= 0">{{ pomo.running ? "暂停" : "开始" }}</button>
+                  <button type="button" class="btn ghost" @click="resetPomo">重置</button>
+                </div>
+              </div>
+              <div v-if="pomoLogs.length" class="pomo-history">
+                <h3>最近记录</h3>
+                <ul>
+                  <li v-for="log in pomoLogs" :key="log.id">
+                    {{ log.name }} · {{ Math.round(log.planned_seconds / 60) }} 分钟 · {{ log.status === "completed" ? "✓" : "⋯" }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section v-show="currentPage === 'qa'" class="page">
+            <div class="card toon">
+              <h2 class="section-title">问答</h2>
+              <p class="muted">随便问点简单问题；Ollama 在家时会答得更活，不在就用便签规则～</p>
+              <textarea v-model.trim="qaQuestion" rows="3" placeholder="例如：四象限怎么用？"></textarea>
+              <button type="button" class="btn primary blob" :disabled="qaLoading" @click="askQA">{{ qaLoading ? "想想…" : "问一下" }}</button>
+              <p v-if="qaHint" class="hint-pill">{{ qaHint }}</p>
+              <div v-if="qaAnswer" class="qa-bubble">{{ qaAnswer }}</div>
+              <p class="muted small">提示：确保已运行 <code>ollama serve</code> 且模型已拉取，否则会使用离线规则回答。</p>
+            </div>
+          </section>
+
+          <section v-show="currentPage === 'profile'" class="page">
+            <div class="card toon">
+              <h2 class="section-title">我的资料</h2>
+              <p class="muted">信息存在 SQLite 里，只属于你这台账号。</p>
+              <div class="form-grid">
+                <label>登录名（只读）<input :value="user.username" readonly /></label>
+                <label>昵称<input v-model.trim="profileForm.display_name" placeholder="想怎么被称呼" maxlength="64" /></label>
+                <label>一句签名<textarea v-model="profileForm.bio" rows="2" placeholder="写点可爱的签名~" maxlength="500"></textarea></label>
+                <label class="inline-label">
+                  主题风格
+                  <select v-model="theme">
+                    <option value="peach">暖桃</option>
+                    <option value="mint">薄荷</option>
+                    <option value="ocean">海风</option>
+                    <option value="sunset">落日</option>
+                  </select>
+                </label>
+                <label class="inline-label">
+                  提醒方式
+                  <select v-model="reminderMode">
+                    <option value="browser">浏览器通知（系统通知）</option>
+                    <option value="desktop_modal">页面提示卡</option>
+                    <option value="local_alarm">提示音 + 页面卡片</option>
+                  </select>
+                </label>
+                <label>时间块模板（逗号或换行分隔）<textarea v-model="timeBlocksText" rows="2" placeholder="例如：08:00-09:30, 10:00-11:00, 14:00-16:00"></textarea></label>
+                <button type="button" class="btn primary blob" @click="saveProfile">保存资料</button>
+              </div>
+              <p v-if="profileMsg" class="message">{{ profileMsg }}</p>
+            </div>
+          </section>
+        </main>
+      </template>
+
+      <div v-if="reminderModal.open" class="reminder-overlay" role="dialog" aria-modal="true">
+        <div class="reminder-panel toon">
+          <h2>到点啦</h2>
+          <ul class="reminder-list">
+            <li v-for="t in reminderModal.tasks" :key="t.id">
+              <strong>{{ t.title }}</strong>
+              <span class="tag">{{ t.quadrant }}</span>
+            </li>
+          </ul>
+          <p v-if="reminderMode === 'local_alarm'" class="muted small">提示音在响，点下面停止～</p>
+          <button type="button" class="btn primary blob wide" @click="dismissReminders">知道啦</button>
+        </div>
+      </div>
+{% endraw %}
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
