@@ -118,6 +118,9 @@ def migrate_db():
             updated_at TEXT NOT NULL,
             user_id INTEGER,
             completed_at TEXT DEFAULT NULL,
+            recurrence_type TEXT DEFAULT NULL,
+            recurrence_interval INTEGER DEFAULT 1,
+            recurrence_end_date TEXT DEFAULT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """
@@ -127,6 +130,12 @@ def migrate_db():
         db.execute("ALTER TABLE tasks ADD COLUMN user_id INTEGER")
     if "completed_at" not in cols:
         db.execute("ALTER TABLE tasks ADD COLUMN completed_at TEXT")
+    if "recurrence_type" not in cols:
+        db.execute("ALTER TABLE tasks ADD COLUMN recurrence_type TEXT DEFAULT NULL")
+    if "recurrence_interval" not in cols:
+        db.execute("ALTER TABLE tasks ADD COLUMN recurrence_interval INTEGER DEFAULT 1")
+    if "recurrence_end_date" not in cols:
+        db.execute("ALTER TABLE tasks ADD COLUMN recurrence_end_date TEXT DEFAULT NULL")
     # 添加任务表索引
     try:
         db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)")
@@ -200,15 +209,33 @@ def migrate_db():
             priority_level TEXT DEFAULT '',
             scene TEXT DEFAULT '',
             planned_at TEXT DEFAULT NULL,
+            start_time TEXT DEFAULT NULL,
+            end_time TEXT DEFAULT NULL,
             time_block TEXT DEFAULT '',
             notes TEXT DEFAULT '',
             status TEXT NOT NULL DEFAULT 'planning',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
+            recurrence_type TEXT DEFAULT NULL,
+            recurrence_interval INTEGER DEFAULT 1,
+            recurrence_end_date TEXT DEFAULT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """
     )
+    # 检查并添加计划项表的 start_time 和 end_time 字段
+    plan_cols = _table_columns(db, "plan_items")
+    if "start_time" not in plan_cols:
+        db.execute("ALTER TABLE plan_items ADD COLUMN start_time TEXT DEFAULT NULL")
+    if "end_time" not in plan_cols:
+        db.execute("ALTER TABLE plan_items ADD COLUMN end_time TEXT DEFAULT NULL")
+    # 检查并添加计划项表的循环提醒相关字段
+    if "recurrence_type" not in plan_cols:
+        db.execute("ALTER TABLE plan_items ADD COLUMN recurrence_type TEXT DEFAULT NULL")
+    if "recurrence_interval" not in plan_cols:
+        db.execute("ALTER TABLE plan_items ADD COLUMN recurrence_interval INTEGER DEFAULT 1")
+    if "recurrence_end_date" not in plan_cols:
+        db.execute("ALTER TABLE plan_items ADD COLUMN recurrence_end_date TEXT DEFAULT NULL")
     # 添加计划项表索引
     try:
         db.execute("CREATE INDEX IF NOT EXISTS idx_plan_items_user_id ON plan_items(user_id)")
@@ -552,9 +579,10 @@ def create_task():
             """
             INSERT INTO tasks (
                 title, description, is_important, is_urgent, due_at, remind_at,
-                completed, reminded, created_at, updated_at, user_id, completed_at
+                completed, reminded, created_at, updated_at, user_id, completed_at,
+                recurrence_type, recurrence_interval, recurrence_end_date
             )
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, NULL, ?, ?, ?)
             """,
             (
                 title,
@@ -566,6 +594,9 @@ def create_task():
                 now,
                 now,
                 uid,
+                payload.get("recurrence_type"),
+                payload.get("recurrence_interval", 1),
+                payload.get("recurrence_end_date"),
             ),
         )
         db.commit()
@@ -604,7 +635,8 @@ def update_task(task_id):
         """
         UPDATE tasks
         SET title = ?, description = ?, is_important = ?, is_urgent = ?, due_at = ?, remind_at = ?,
-            completed = ?, reminded = ?, updated_at = ?, completed_at = ?
+            completed = ?, reminded = ?, updated_at = ?, completed_at = ?,
+            recurrence_type = ?, recurrence_interval = ?, recurrence_end_date = ?
         WHERE id = ? AND user_id = ?
         """,
         (
@@ -618,6 +650,9 @@ def update_task(task_id):
             reminded,
             now,
             completed_at,
+            payload.get("recurrence_type"),
+            payload.get("recurrence_interval", 1),
+            payload.get("recurrence_end_date"),
             task_id,
             uid,
         ),
@@ -998,9 +1033,9 @@ def create_plan_item():
         """
         INSERT INTO plan_items (
             user_id, title, domain, project, role, priority_rule, priority_level,
-            scene, planned_at, time_block, notes, status, created_at, updated_at
+            scene, planned_at, start_time, end_time, time_block, notes, status, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             uid,
@@ -1012,6 +1047,8 @@ def create_plan_item():
             (payload.get("priority_level") or "").strip(),
             (payload.get("scene") or "").strip(),
             payload.get("planned_at"),
+            payload.get("start_time"),
+            payload.get("end_time"),
             (payload.get("time_block") or "").strip(),
             (payload.get("notes") or "").strip(),
             (payload.get("status") or "planning").strip() or "planning",
@@ -1039,7 +1076,7 @@ def update_plan_item(item_id):
         """
         UPDATE plan_items
         SET title = ?, domain = ?, project = ?, role = ?, priority_rule = ?, priority_level = ?,
-            scene = ?, planned_at = ?, time_block = ?, notes = ?, status = ?, updated_at = ?
+            scene = ?, planned_at = ?, start_time = ?, end_time = ?, time_block = ?, notes = ?, status = ?, updated_at = ?
         WHERE id = ? AND user_id = ?
         """,
         (
@@ -1051,6 +1088,8 @@ def update_plan_item(item_id):
             (payload.get("priority_level") or "").strip(),
             (payload.get("scene") or "").strip(),
             payload.get("planned_at"),
+            payload.get("start_time"),
+            payload.get("end_time"),
             (payload.get("time_block") or "").strip(),
             (payload.get("notes") or "").strip(),
             (payload.get("status") or "planning").strip() or "planning",

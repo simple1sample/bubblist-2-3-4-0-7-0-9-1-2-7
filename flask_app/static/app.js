@@ -7,6 +7,9 @@ const emptyForm = () => ({
   is_urgent: false,
   due_at: "",
   remind_at: "",
+  recurrence_type: null,
+  recurrence_interval: 1,
+  recurrence_end_date: "",
 });
 
 function fromIsoToInput(iso) {
@@ -114,9 +117,14 @@ createApp({
         quadrant: "Q2",
         scene: "",
         planned_at: "",
+        start_time: "",
+        end_time: "",
         time_block: "",
         notes: "",
         status: "planning",
+        recurrence_type: null,
+        recurrence_interval: 1,
+        recurrence_end_date: "",
       },
       editingPlanId: null,
       planMsg: "",
@@ -289,6 +297,8 @@ createApp({
           display_name: nv.display_name || nv.username || "",
           bio: nv.bio || "",
         };
+        // 确保主题样式正确应用
+        document.getElementById('app').setAttribute('data-theme', this.theme);
         this.$nextTick(() => {
           this.bootstrapAfterLogin();
         });
@@ -297,6 +307,10 @@ createApp({
         this.reminderModal = { open: false, tasks: [] };
         this.destroyPieCharts();
       }
+    },
+    theme(newTheme) {
+      // 当主题变化时，确保更新根元素的 data-theme 属性
+      document.getElementById('app').setAttribute('data-theme', newTheme);
     },
     currentPage(page) {
       this.$nextTick(async () => {
@@ -428,6 +442,8 @@ createApp({
       if (this.reminderMode === "browser" && "Notification" in window && Notification.permission === "default") {
         await Notification.requestPermission();
       }
+      // 确保主题样式正确应用
+      document.getElementById('app').setAttribute('data-theme', this.theme);
     },
     pickPreset(m) {
       this.pomo.chosenPreset = m;
@@ -520,18 +536,28 @@ createApp({
       if (!res.ok) return;
       const data = await res.json();
       const items = {};
-      (data.tasks || []).forEach((t) => {
-        const key = (t.due_at || t.remind_at || "").slice(0, 10);
-        if (!key) return;
-        if (!items[key]) items[key] = [];
-        items[key].push({ key: `task-${t.id}`, type: "task", title: t.title });
-      });
+      
+      // 首先加载计划项
+      const planTitles = new Set();
       (data.plan_items || []).forEach((p) => {
         const key = (p.planned_at || "").slice(0, 10);
         if (!key) return;
         if (!items[key]) items[key] = [];
         items[key].push({ key: `plan-${p.id}`, type: "plan", title: p.title });
+        planTitles.add(p.title);
       });
+      
+      // 然后加载任务，过滤掉与计划项重复的任务
+      (data.tasks || []).forEach((t) => {
+        const key = (t.due_at || t.remind_at || "").slice(0, 10);
+        if (!key) return;
+        // 只添加与计划项不重复的任务
+        if (!planTitles.has(t.title)) {
+          if (!items[key]) items[key] = [];
+          items[key].push({ key: `task-${t.id}`, type: "task", title: t.title });
+        }
+      });
+      
       this.calendar.items = items;
     },
     shiftMonth(step) {
@@ -619,7 +645,10 @@ createApp({
         // 创建新的计划项
         const payload = {
           ...this.planForm,
-          planned_at: fromInputToIso(this.planForm.planned_at),
+          planned_at: fromInputToIso(this.planForm.planned_at + 'T00:00:00'),
+          start_time: this.planForm.start_time ? fromInputToIso(this.planForm.planned_at + 'T' + this.planForm.start_time) : null,
+          end_time: this.planForm.end_time ? fromInputToIso(this.planForm.planned_at + 'T' + this.planForm.end_time) : null,
+          recurrence_end_date: this.planForm.recurrence_end_date ? fromInputToIso(this.planForm.recurrence_end_date + 'T00:00:00') : null,
         };
         const res = await fetchJSON("/api/plan/items", { method: "POST", body: JSON.stringify(payload) });
         if (!res.ok) {
@@ -726,10 +755,15 @@ createApp({
         priority_level: item.priority_level || "",
         quadrant: item.quadrant || "Q2",
         scene: item.scene || "",
-        planned_at: fromIsoToInput(item.planned_at),
+        planned_at: fromIsoToInput(item.planned_at).split('T')[0],
+        start_time: item.start_time ? new Date(item.start_time).toTimeString().slice(0, 5) : "",
+        end_time: item.end_time ? new Date(item.end_time).toTimeString().slice(0, 5) : "",
         time_block: item.time_block || "",
         notes: item.notes || "",
         status: item.status || "planning",
+        recurrence_type: item.recurrence_type || null,
+        recurrence_interval: item.recurrence_interval || 1,
+        recurrence_end_date: item.recurrence_end_date ? fromIsoToInput(item.recurrence_end_date).split('T')[0] : "",
       };
     },
     async deletePlanItem(id) {
@@ -841,6 +875,7 @@ createApp({
         ...this.form,
         due_at: fromInputToIso(this.form.due_at),
         remind_at: fromInputToIso(this.form.remind_at),
+        recurrence_end_date: this.form.recurrence_end_date ? fromInputToIso(this.form.recurrence_end_date + 'T00:00:00') : null,
       };
       if (this.editingId) {
         const t = this.tasks.find((x) => x.id === this.editingId);
@@ -915,6 +950,9 @@ createApp({
         is_urgent: !!task.is_urgent,
         due_at: fromIsoToInput(task.due_at),
         remind_at: fromIsoToInput(task.remind_at),
+        recurrence_type: task.recurrence_type || null,
+        recurrence_interval: task.recurrence_interval || 1,
+        recurrence_end_date: task.recurrence_end_date ? fromIsoToInput(task.recurrence_end_date).split('T')[0] : "",
       };
     },
     cancelEdit() {

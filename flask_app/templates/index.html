@@ -41,7 +41,7 @@
       </template>
 
       <template v-else>
-        <header class="top-shell toon" :data-theme="theme">
+        <header class="top-shell toon">
           <div class="brand">
             <div>
               <div class="brand-name">鱼鱼日程</div>
@@ -204,7 +204,30 @@
                         </div>
                       </div>
                     </div>
-                    <input type="datetime-local" v-model="planForm.planned_at" />
+                    <input type="date" v-model="planForm.planned_at" />
+                  </div>
+                  <div class="plan-row">
+                    <input type="time" v-model="planForm.start_time" placeholder="开始时间" />
+                    <input type="time" v-model="planForm.end_time" placeholder="结束时间" />
+                  </div>
+                  <div class="plan-row">
+                    <label>循环类型
+                      <select v-model="planForm.recurrence_type">
+                        <option value="">不循环</option>
+                        <option value="daily">每天</option>
+                        <option value="weekly">每周</option>
+                        <option value="monthly">每月</option>
+                        <option value="yearly">每年</option>
+                      </select>
+                    </label>
+                    <label v-if="planForm.recurrence_type">间隔
+                      <input type="number" v-model.number="planForm.recurrence_interval" min="1" />
+                    </label>
+                  </div>
+                  <div class="plan-row" v-if="planForm.recurrence_type">
+                    <label>结束日期
+                      <input type="date" v-model="planForm.recurrence_end_date" />
+                    </label>
                   </div>
                   <div class="input-with-suggestions">
                     <input 
@@ -265,7 +288,8 @@
                         <span>场景：{{ item.scene || "—" }}</span>
                       </div>
                       <div class="plan-meta">
-                        <span>时间：{{ item.planned_at ? localTime(item.planned_at) : "待安排" }}</span>
+                        <span>日期：{{ item.planned_at ? localTime(item.planned_at).split(' ')[0] : "待安排" }}</span>
+                        <span>时间：{{ item.start_time ? localTime(item.start_time).split(' ')[1] : "—" }} - {{ item.end_time ? localTime(item.end_time).split(' ')[1] : "—" }}</span>
                         <span>时间块：{{ item.time_block || "—" }}</span>
                         <span>状态：{{ item.status }}</span>
                       </div>
@@ -293,6 +317,25 @@
                 </div>
                 <label>截止时间 <input type="datetime-local" v-model="form.due_at" /></label>
                 <label>提醒时间 <input type="datetime-local" v-model="form.remind_at" /></label>
+                <div class="plan-row">
+                    <label>循环类型
+                      <select v-model="form.recurrence_type">
+                        <option value="">不循环</option>
+                        <option value="daily">每天</option>
+                        <option value="weekly">每周</option>
+                        <option value="monthly">每月</option>
+                        <option value="yearly">每年</option>
+                      </select>
+                    </label>
+                    <label v-if="form.recurrence_type">间隔
+                      <input type="number" v-model.number="form.recurrence_interval" min="1" />
+                    </label>
+                  </div>
+                  <div class="plan-row" v-if="form.recurrence_type">
+                    <label>结束日期
+                      <input type="date" v-model="form.recurrence_end_date" />
+                    </label>
+                  </div>
                 <div class="btn-row">
                   <button type="submit" class="btn primary blob">{{ editingId ? "保存" : "添加" }}</button>
                   <button v-if="editingId" type="button" class="btn ghost" @click="cancelEdit">取消</button>

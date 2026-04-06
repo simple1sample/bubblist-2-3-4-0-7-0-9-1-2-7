@@ -1,4 +1,4 @@
-# 四象限日程提醒系统（Flask + Vue）
+# 鱼鱼日程-日程提醒系统（Flask + Vue）
 
 本项目按新要求实现：
 - 前端：HTML5、CSS3、JavaScript、Vue（CDN）
@@ -7,7 +7,7 @@
 - API：REST
 - 本地 AI：Ollama（可选）
 
-## 技术栈（全免费）
+## 技术栈
 
 - 前端：`Vue 3 CDN + 原生 HTML/CSS/JS`
 - 后端：`Flask`
